@@ -1,607 +1,193 @@
 import anime from 'animejs/lib/anime.es.js';
+import { behaviorNames, layout, faceLayers, createClip, sampleClip, channelMatrix } from './cat-motion.js';
 import './style.css';
 
-const app = document.querySelector('#app');
+const params=new URLSearchParams(location.search);
+const inspection=params.has('inspect') || params.has('edit');
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const listeners=new AbortController();
+const listenerOptions={signal:listeners.signal};
+let disposed=false;
+const clips=Object.fromEntries(behaviorNames.map(name=>[name,createClip(name)]));
+const asset=name=>`${import.meta.env.BASE_URL}cat-v2/${name}.png`;
+const image=name=>`<image class="cat-layer ${name}" href="${asset(name)}" width="${layout[name].width}" height="${layout[name].height}" preserveAspectRatio="xMidYMid slice"/>`;
+const layer=name=>`<g data-channel="${name}">${image(name)}</g>`;
+const feet=layout.feet;
 
-app.innerHTML = `
-  <section class="experience cat-only" aria-label="Scrollable cat animation demonstration">
+document.querySelector('#app').innerHTML=`
+  <section class="experience" aria-label="Scrollable cat animation">
     <div class="sticky-stage">
       <div class="scene-grid" aria-hidden="true"></div>
-
       <div class="cat-scroll-rig" id="catScrollRig">
-        <div class="cat-idle-rig" id="catIdleRig" role="img" aria-label="Hand drawn sitting cat looking around and gently kneading">
-          <div class="layer tail-wrap"><img class="cat-layer tail" src="/cat/tail.png" alt="" draggable="false"></div>
-          <img class="cat-layer body" src="/cat/body.png" alt="" draggable="false">
-
-          <div class="feet-clip feet-left" aria-hidden="true">
-            <img class="cat-layer feet-source" src="/cat/feet.png" alt="" draggable="false">
-          </div>
-          <div class="feet-clip feet-right" aria-hidden="true">
-            <img class="cat-layer feet-source" src="/cat/feet.png" alt="" draggable="false">
-          </div>
-
-          <img class="cat-layer head" src="/cat/head.png" alt="" draggable="false">
-
-          <div class="face-rig">
-            <img class="cat-layer earholes" src="/cat/earholes.png" alt="" draggable="false">
-            <div class="eye-window"><img class="cat-layer eyes" src="/cat/eyes.png" alt="" draggable="false"></div>
-            <img class="cat-layer brows" src="/cat/brows.png" alt="" draggable="false">
-            <img class="cat-layer whiskers" src="/cat/whiskers.png" alt="" draggable="false">
-            <img class="cat-layer mouth" src="/cat/mouth.png" alt="" draggable="false">
-          </div>
-        </div>
+        <svg class="cat-art" id="catIdleRig" viewBox="0 0 272 250" role="img" aria-labelledby="catTitle">
+          <title id="catTitle">Hand-drawn cat, resting</title>
+          <defs>
+            <clipPath id="leftPaw"><rect width="${feet.width/2}" height="${feet.height}"/></clipPath>
+            <clipPath id="rightPaw"><rect x="${feet.width/2}" width="${feet.width/2}" height="${feet.height}"/></clipPath>
+          </defs>
+          <g data-channel="roll">
+            ${layer('tail')}
+            <g data-channel="feet">
+              <g class="paw-left"><g clip-path="url(#leftPaw)">${image('feet')}</g></g>
+              <g class="paw-right"><g clip-path="url(#rightPaw)">${image('feet')}</g></g>
+            </g>
+            ${layer('body')}
+            <g data-channel="head">${image('head')}${faceLayers.map(layer).join('')}</g>
+          </g>
+        </svg>
       </div>
+      <p class="load-error" role="alert" hidden>The cat artwork could not load. Please reload the page.</p>
     </div>
   </section>
+  ${inspection?`<aside class="motion-inspector" aria-label="Animation inspector">
+    <label>Behavior <select id="behavior">${behaviorNames.map(name=>`<option value="${name}">${name[0].toUpperCase()+name.slice(1)}</option>`).join('')}</select></label>
+    <label class="scrubber">Timeline <input id="scrub" type="range" min="0" max="1000" value="0" step="1"></label>
+    <output id="time">0.00 s</output>
+    <button id="play" type="button">Play</button>
+    <button id="reset" type="button">Reset pose</button>
+  </aside>`:''}
 `;
 
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const rig = document.querySelector('#catScrollRig');
-const idleRig = document.querySelector('#catIdleRig');
-const experience = document.querySelector('.experience');
+const channelElements=Object.fromEntries([...document.querySelectorAll('[data-channel]')].map(el=>[el.dataset.channel,el]));
+const rig=document.querySelector('#catScrollRig');
+const experience=document.querySelector('.experience');
+const pawLeft=document.querySelector('.paw-left');
+const pawRight=document.querySelector('.paw-right');
+const title=document.querySelector('#catTitle');
+const scrub=document.querySelector('#scrub');
+const timeOutput=document.querySelector('#time');
+const playButton=document.querySelector('#play');
+const behaviorSelect=document.querySelector('#behavior');
+let current=clips.idle;
+let animation;
+let playing=false;
+let ready=false;
+let sequenceIndex=0;
+const clock={time:0};
+const sequence=['idle','idle','curious','idle','kneading','idle','angry','idle','idle','rolling'];
 
-const rand = (min, max) => Math.random() * (max - min) + min;
-const later = (fn, min, max) => window.setTimeout(fn, rand(min, max));
-let expressionBusy = false;
-
-function cancelFaceMotion() {
-  anime.remove('.eyes');
-  anime.remove('.brows');
-  anime.remove('.mouth');
-  anime.remove('.whiskers');
-  anime.remove('.earholes');
-}
-
-function surprisedExpression(onDone) {
-  if (expressionBusy) return;
-  expressionBusy = true;
-  cancelFaceMotion();
-
-  // Surprise is carried by the upper face only. The mouth deliberately
-  // stays untouched so the original drawing keeps its expression.
-  anime.timeline({
-    easing: 'easeOutQuad',
-    complete: () => {
-      expressionBusy = false;
-      onDone?.();
-    }
-  })
-    .add({
-      targets: '.brows',
-      translateY: -5.2,
-      scaleY: 1.045,
-      rotateX: 0,
-      duration: 190
-    })
-    .add({
-      targets: '.eyes',
-      translateY: -2.4,
-      scaleY: 1.035,
-      duration: 170
-    }, '-=95')
-    .add({
-      targets: '.brows',
-      translateY: 0,
-      scaleY: 1,
-      duration: 430,
-      delay: 620,
-      easing: 'easeOutElastic(1, .72)'
-    })
-    .add({
-      targets: '.eyes',
-      translateY: 0,
-      scaleY: 1,
-      duration: 310,
-      easing: 'easeOutQuad'
-    }, '-=350');
-}
-
-function jollyExpression(onDone) {
-  if (expressionBusy) return;
-  expressionBusy = true;
-  cancelFaceMotion();
-
-  const timeline = anime.timeline({
-    easing: 'easeInOutSine',
-    complete: () => {
-      expressionBusy = false;
-      onDone?.();
-    }
-  });
-
-  // Brows and mouth share the same X-axis rocking beat. The eyes follow
-  // each brow movement a fraction later, which keeps the expression loose
-  // instead of making every facial layer move in perfect sync.
-  const addBeat = (angle, browY, eyeY, duration = 260) => {
-    timeline
-      .add({
-        targets: ['.brows', '.mouth'],
-        rotateX: angle,
-        duration
-      })
-      .add({
-        targets: '.brows',
-        translateY: browY,
-        duration
-      }, `-=${duration}`)
-      .add({
-        targets: '.eyes',
-        translateY: eyeY,
-        scaleY: angle < 0 ? 1.025 : 0.985,
-        duration: Math.max(150, duration - 55)
-      }, `-=${Math.max(0, duration - 95)}`);
-  };
-
-  addBeat(-30, -3.0, -1.8, 250);
-  addBeat(30, 1.1, 0.8, 285);
-  addBeat(-30, -2.6, -1.5, 250);
-  addBeat(30, 0.8, 0.65, 285);
-
-  timeline
-    .add({
-      targets: ['.brows', '.mouth'],
-      rotateX: 0,
-      duration: 360,
-      easing: 'easeOutElastic(1, .68)'
-    })
-    .add({
-      targets: '.brows',
-      translateY: 0,
-      duration: 330
-    }, '-=360')
-    .add({
-      targets: '.eyes',
-      translateY: 0,
-      scaleY: 1,
-      duration: 300,
-      easing: 'easeOutQuad'
-    }, '-=260');
-}
-
-function scheduleExpression() {
-  if (prefersReducedMotion) return;
-
-  if (expressionBusy) {
-    later(scheduleExpression, 1200, 2200);
-    return;
+function render(time) {
+  const state=sampleClip(current,time);
+  for(const [name,value] of Object.entries(state)) {
+    channelElements[name].setAttribute('transform',`matrix(${channelMatrix(value,name).join(' ')})`);
   }
-
-  const done = () => later(scheduleExpression, 5200, 9800);
-  if (Math.random() < 0.48) surprisedExpression(done);
-  else jollyExpression(done);
-}
-
-function startAmbientMotion() {
-  if (prefersReducedMotion) return;
-
-  anime({
-    targets: '.cat-idle-rig',
-    translateY: [0, -1.8],
-    scaleY: [1, 1.006],
-    duration: 2600,
-    direction: 'alternate',
-    loop: true,
-    easing: 'easeInOutSine'
-  });
-
-  anime({
-    targets: '.head',
-    translateY: [0, -0.7],
-    duration: 2650,
-    delay: 150,
-    direction: 'alternate',
-    loop: true,
-    easing: 'easeInOutSine'
-  });
-
-  anime({
-    targets: '.tail-wrap',
-    rotate: [
-      { value: -10, duration: 1550 },
-      { value: 13, duration: 1850 },
-      { value: -7, duration: 1650 },
-      { value: 9, duration: 1750 }
-    ],
-    loop: true,
-    easing: 'easeInOutSine'
-  });
-
-  anime({
-    targets: '.feet-left',
-    translateY: [0, 2.5],
-    rotate: [0, -1.4],
-    duration: 900,
-    direction: 'alternate',
-    loop: true,
-    easing: 'easeInOutSine'
-  });
-
-  anime({
-    targets: '.feet-right',
-    translateY: [0, 2.5],
-    rotate: [0, 1.4],
-    duration: 900,
-    delay: 430,
-    direction: 'alternate',
-    loop: true,
-    easing: 'easeInOutSine'
-  });
-
-  const eyeLook = () => {
-    if (expressionBusy) {
-      later(eyeLook, 900, 1600);
-      return;
-    }
-
-    const x = rand(-3.4, 3.4);
-    const y = rand(-1.2, 1.1);
-    anime({
-      targets: '.eyes',
-      translateX: x,
-      translateY: y,
-      duration: rand(160, 250),
-      easing: 'easeOutQuad',
-      complete: () => {
-        later(() => anime({
-          targets: '.eyes',
-          translateX: 0,
-          translateY: 0,
-          duration: rand(180, 300),
-          easing: 'easeOutQuad'
-        }), 700, 2100);
-      }
-    });
-    if (Math.random() > 0.38) later(earListen, 120, 260);
-    later(eyeLook, 3600, 7800);
-  };
-
-  const earListen = () => {
-    if (expressionBusy) return;
-
-    const direction = Math.random() > 0.5 ? 1 : -1;
-    anime({
-      targets: '.earholes',
-      translateX: direction * rand(1.2, 2.7),
-      scaleX: rand(0.985, 1.02),
-      duration: 180,
-      easing: 'easeOutQuad',
-      complete: () => later(() => anime({
-        targets: '.earholes',
-        translateX: 0,
-        scaleX: 1,
-        duration: 430,
-        easing: 'easeOutElastic(1, .7)'
-      }), 220, 650)
-    });
-  };
-
-  const browReact = () => {
-    if (expressionBusy) {
-      later(browReact, 1200, 2200);
-      return;
-    }
-
-    anime({
-      targets: '.brows',
-      translateY: -rand(0.8, 2.2),
-      rotate: rand(-1.8, 1.8),
-      duration: 260,
-      easing: 'easeOutQuad',
-      complete: () => later(() => anime({
-        targets: '.brows',
-        translateY: 0,
-        rotate: 0,
-        duration: 520,
-        easing: 'easeOutElastic(1, .65)'
-      }), 320, 920)
-    });
-    later(browReact, 5700, 11800);
-  };
-
-  const sniff = () => {
-    if (expressionBusy) {
-      later(sniff, 1600, 2800);
-      return;
-    }
-
-    anime.timeline({ easing: 'easeInOutSine' })
-      .add({ targets: '.mouth', translateY: -0.8, scale: 1.015, duration: 180 })
-      .add({ targets: '.whiskers', translateY: -0.65, scaleX: 1.006, duration: 180 }, '-=150')
-      .add({ targets: '.mouth', translateY: 0, scale: 1, duration: 300 })
-      .add({ targets: '.whiskers', translateY: 0, scaleX: 1, duration: 300 }, '-=260');
-    later(sniff, 8000, 15000);
-  };
-
-  later(eyeLook, 900, 2200);
-  later(browReact, 2600, 5200);
-  later(sniff, 5000, 9000);
-  later(scheduleExpression, 3200, 6200);
-}
-
-function updateScroll() {
-  const rect = experience.getBoundingClientRect();
-  const scrollable = Math.max(1, experience.offsetHeight - window.innerHeight);
-  const travelled = Math.min(scrollable, Math.max(0, -rect.top));
-  const p = travelled / scrollable;
-
-  const x = Math.sin(p * Math.PI * 1.1) * Math.min(window.innerWidth * 0.045, 34);
-  const y = (p - 0.5) * -18;
-  const scale = 0.94 + Math.sin(p * Math.PI) * 0.08;
-  const rotate = (p - 0.5) * 1.4;
-  rig.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale}) rotate(${rotate}deg)`;
-
-  requestAnimationFrame(updateScroll);
-}
-
-Promise.all([...document.images].map(img => img.complete ? Promise.resolve() : new Promise(resolve => {
-  img.addEventListener('load', resolve, { once: true });
-  img.addEventListener('error', resolve, { once: true });
-}))).then(() => document.body.classList.add('ready'));
-
-startAmbientMotion();
-requestAnimationFrame(updateScroll);
-
-/* CAT_LAYER_EDITOR_START */
-function setupLayerEditor() {
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has('edit')) return;
-
-  const editableLayers = [
-    ['tail', '.tail-wrap'],
-    ['body', '.body'],
-    ['feet-left', '.feet-left'],
-    ['feet-right', '.feet-right'],
-    ['head', '.head'],
-    ['earholes', '.earholes'],
-    ['eye-window', '.eye-window'],
-    ['eyes', '.eyes'],
-    ['brows', '.brows'],
-    ['whiskers', '.whiskers'],
-    ['mouth', '.mouth']
-  ];
-
-  const STORAGE_KEY = 'cat-layer-layout-v1';
-  const root = document.documentElement;
-  const rigEl = document.querySelector('#catIdleRig');
-  if (!rigEl) return;
-
-  const layers = new Map();
-  editableLayers.forEach(([name, selector]) => {
-    const el = document.querySelector(selector);
-    if (!el) return;
-    el.dataset.editLayer = name;
-    layers.set(name, el);
-  });
-
-  let selectedName = editableLayers.find(([, selector]) => document.querySelector(selector))?.[0] ?? null;
-  let drag = null;
-
-  const readPercent = (el, prop) => {
-    const parent = el.offsetParent || rigEl;
-    const rect = el.getBoundingClientRect();
-    const parentRect = parent.getBoundingClientRect();
-    if (prop === 'left') return ((rect.left - parentRect.left) / parentRect.width) * 100;
-    if (prop === 'top') return ((rect.top - parentRect.top) / parentRect.height) * 100;
-    if (prop === 'width') return (rect.width / parentRect.width) * 100;
-    return 0;
-  };
-
-  const getLayout = () => {
-    const out = {};
-    layers.forEach((el, name) => {
-      out[name] = {
-        left: parseFloat(el.style.left) || parseFloat(getComputedStyle(el).left) || readPercent(el, 'left'),
-        top: parseFloat(el.style.top) || parseFloat(getComputedStyle(el).top) || readPercent(el, 'top'),
-        width: parseFloat(el.style.width) || parseFloat(getComputedStyle(el).width) || readPercent(el, 'width')
-      };
-
-      // Computed left/top/width are usually pixels. Convert those back to percentages.
-      ['left', 'top', 'width'].forEach((key) => {
-        const raw = el.style[key];
-        if (!raw || !raw.endsWith('%')) out[name][key] = readPercent(el, key);
-      });
-    });
-    return out;
-  };
-
-  const applyLayout = (layout) => {
-    Object.entries(layout || {}).forEach(([name, values]) => {
-      const el = layers.get(name);
-      if (!el || !values) return;
-      if (Number.isFinite(values.left)) el.style.left = `${values.left}%`;
-      if (Number.isFinite(values.top)) el.style.top = `${values.top}%`;
-      if (Number.isFinite(values.width)) el.style.width = `${values.width}%`;
-    });
-    syncControls();
-  };
-
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved) applyLayout(saved);
-  } catch (_) {}
-
-  const toolbar = document.createElement('aside');
-  toolbar.className = 'layer-editor';
-  toolbar.innerHTML = `
-    <div class="layer-editor__row">
-      <strong>Layer editor</strong>
-      <button type="button" data-editor-close aria-label="Close editor">Ã—</button>
-    </div>
-    <label>
-      <span>Layer</span>
-      <select data-editor-layer></select>
-    </label>
-    <label>
-      <span>Scale</span>
-      <input data-editor-scale type="range" min="10" max="140" step="0.1">
-      <output data-editor-scale-value></output>
-    </label>
-    <div class="layer-editor__nudge">
-      <button type="button" data-nudge="up">â†‘</button>
-      <button type="button" data-nudge="left">â†</button>
-      <button type="button" data-nudge="down">â†“</button>
-      <button type="button" data-nudge="right">â†’</button>
-    </div>
-    <div class="layer-editor__actions">
-      <button type="button" data-editor-save>Save</button>
-      <button type="button" data-editor-copy>Copy JSON</button>
-      <button type="button" data-editor-reset>Reset</button>
-    </div>
-    <small>Drag a layer to move it. Use the slider or Shift + mouse wheel to scale.</small>
-  `;
-  document.body.appendChild(toolbar);
-  document.body.classList.add('layout-editing');
-
-  const select = toolbar.querySelector('[data-editor-layer]');
-  const scale = toolbar.querySelector('[data-editor-scale]');
-  const scaleValue = toolbar.querySelector('[data-editor-scale-value]');
-
-  layers.forEach((_, name) => {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    select.appendChild(option);
-  });
-
-  const markSelected = () => {
-    document.querySelectorAll('[data-edit-layer]').forEach((el) => el.classList.remove('is-edit-selected'));
-    const el = layers.get(selectedName);
-    if (el) el.classList.add('is-edit-selected');
-  };
-
-  function syncControls() {
-    if (!selectedName || !layers.has(selectedName)) return;
-    select.value = selectedName;
-    const width = readPercent(layers.get(selectedName), 'width');
-    scale.value = String(width);
-    scaleValue.textContent = `${width.toFixed(1)}%`;
-    markSelected();
+  // Small alternating paw presses fade to zero at both ends of the burst.
+  const press=current.name==='kneading'?Math.sin(Math.PI*time/current.duration)*Math.sin((time-590)*Math.PI/460)*1.15:0;
+  pawLeft.setAttribute('transform',`translate(0 ${Math.max(0,press)})`);
+  pawRight.setAttribute('transform',`translate(0 ${Math.max(0,-press)})`);
+  if(scrub) {
+    scrub.value=String(time/current.duration*1000);
+    timeOutput.value=`${(time/1000).toFixed(2)} / ${(current.duration/1000).toFixed(2)} s`;
   }
-
-  const selectLayer = (name) => {
-    if (!layers.has(name)) return;
-    selectedName = name;
-    syncControls();
-  };
-
-  select.addEventListener('change', () => selectLayer(select.value));
-
-  scale.addEventListener('input', () => {
-    const el = layers.get(selectedName);
-    if (!el) return;
-    el.style.width = `${Number(scale.value)}%`;
-    scaleValue.textContent = `${Number(scale.value).toFixed(1)}%`;
-  });
-
-  const nudge = (dx, dy) => {
-    const el = layers.get(selectedName);
-    if (!el) return;
-    const left = readPercent(el, 'left') + dx;
-    const top = readPercent(el, 'top') + dy;
-    el.style.left = `${left}%`;
-    el.style.top = `${top}%`;
-  };
-
-  toolbar.querySelectorAll('[data-nudge]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const amount = 0.35;
-      const dir = button.dataset.nudge;
-      if (dir === 'left') nudge(-amount, 0);
-      if (dir === 'right') nudge(amount, 0);
-      if (dir === 'up') nudge(0, -amount);
-      if (dir === 'down') nudge(0, amount);
-    });
-  });
-
-  const beginDrag = (event, name) => {
-    const el = layers.get(name);
-    if (!el) return;
-    selectLayer(name);
-    const parent = el.offsetParent || rigEl;
-    const parentRect = parent.getBoundingClientRect();
-    drag = {
-      pointerId: event.pointerId,
-      el,
-      parentRect,
-      startX: event.clientX,
-      startY: event.clientY,
-      startLeft: readPercent(el, 'left'),
-      startTop: readPercent(el, 'top')
-    };
-    el.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-  };
-
-  layers.forEach((el, name) => {
-    el.addEventListener('pointerdown', (event) => beginDrag(event, name));
-    el.addEventListener('wheel', (event) => {
-      if (!event.shiftKey) return;
-      selectLayer(name);
-      event.preventDefault();
-      const current = readPercent(el, 'width');
-      const next = Math.max(5, Math.min(160, current + (event.deltaY < 0 ? 1 : -1)));
-      el.style.width = `${next}%`;
-      syncControls();
-    }, { passive: false });
-  });
-
-  window.addEventListener('pointermove', (event) => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    const dx = ((event.clientX - drag.startX) / drag.parentRect.width) * 100;
-    const dy = ((event.clientY - drag.startY) / drag.parentRect.height) * 100;
-    drag.el.style.left = `${drag.startLeft + dx}%`;
-    drag.el.style.top = `${drag.startTop + dy}%`;
-    syncControls();
-  });
-
-  const endDrag = (event) => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    drag.el.releasePointerCapture?.(event.pointerId);
-    drag = null;
-  };
-  window.addEventListener('pointerup', endDrag);
-  window.addEventListener('pointercancel', endDrag);
-
-  toolbar.querySelector('[data-editor-save]').addEventListener('click', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(getLayout()));
-  });
-
-  toolbar.querySelector('[data-editor-copy]').addEventListener('click', async () => {
-    const json = JSON.stringify(getLayout(), null, 2);
-    try {
-      await navigator.clipboard.writeText(json);
-    } catch (_) {
-      window.prompt('Copy layer layout JSON:', json);
-    }
-  });
-
-  toolbar.querySelector('[data-editor-reset]').addEventListener('click', () => {
-    localStorage.removeItem(STORAGE_KEY);
-    layers.forEach((el) => {
-      el.style.removeProperty('left');
-      el.style.removeProperty('top');
-      el.style.removeProperty('width');
-    });
-    syncControls();
-  });
-
-  toolbar.querySelector('[data-editor-close]').addEventListener('click', () => {
-    document.body.classList.remove('layout-editing');
-    toolbar.remove();
-    document.querySelectorAll('[data-edit-layer]').forEach((el) => el.classList.remove('is-edit-selected'));
-  });
-
-  window.addEventListener('keydown', (event) => {
-    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
-    const amount = event.shiftKey ? 1 : 0.25;
-    if (event.key === 'ArrowLeft') { event.preventDefault(); nudge(-amount, 0); }
-    if (event.key === 'ArrowRight') { event.preventDefault(); nudge(amount, 0); }
-    if (event.key === 'ArrowUp') { event.preventDefault(); nudge(0, -amount); }
-    if (event.key === 'ArrowDown') { event.preventDefault(); nudge(0, amount); }
-  });
-
-  syncControls();
 }
 
-setupLayerEditor();
-/* CAT_LAYER_EDITOR_END */
+function pause() {
+  playing=false;
+  animation?.pause();
+  if(playButton) playButton.textContent='Play';
+}
+
+function run(name,{autoplay=true}={}) {
+  if(disposed) return;
+  animation?.pause();
+  current=clips[name] || clips.idle;
+  clock.time=0;
+  title.textContent=`Hand-drawn cat — ${current.name}`;
+  rig.dataset.behavior=current.name;
+  if(behaviorSelect) behaviorSelect.value=current.name;
+  render(0);
+  playing=autoplay && ready && !reducedMotion.matches;
+  animation=anime({
+    targets:clock,time:current.duration,duration:current.duration,easing:'linear',autoplay:false,
+    update:()=>render(clock.time),
+    complete:()=>{
+      render(current.duration);
+      if(inspection) { pause(); return; }
+      sequenceIndex=(sequenceIndex+1)%sequence.length;
+      run(sequence[sequenceIndex]);
+    }
+  });
+  if(playing && !document.hidden) animation.play();
+  if(playButton) playButton.textContent=playing?'Pause':'Play';
+}
+
+if(inspection) {
+  behaviorSelect.addEventListener('change',()=>run(behaviorSelect.value,{autoplay:false}));
+  scrub.addEventListener('input',()=>{
+    pause();
+    clock.time=Number(scrub.value)/1000*current.duration;
+    animation.seek(clock.time);
+    render(clock.time);
+  });
+  playButton.addEventListener('click',()=>{
+    if(playing) { pause(); return; }
+    if(reducedMotion.matches || !ready) return;
+    if(clock.time>=current.duration-1) { run(current.name); return; }
+    playing=true;
+    animation.play();
+    playButton.textContent='Pause';
+  });
+  document.querySelector('#reset').addEventListener('click',()=>run('idle',{autoplay:false}));
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) animation?.pause();
+  else if(playing && !reducedMotion.matches) animation?.play();
+},listenerOptions);
+
+// Scroll owns only the outer wrapper and stops requesting frames at rest.
+let scrollFrame=0;
+let progress=0;
+let previousTime=0;
+function updateScroll(now) {
+  scrollFrame=0;
+  if(reducedMotion.matches) { rig.style.transform='none'; return; }
+  const distance=Math.max(1,experience.offsetHeight-innerHeight);
+  const target=Math.max(0,Math.min(1,-experience.getBoundingClientRect().top/distance));
+  const dt=previousTime?Math.min(64,now-previousTime):16;
+  previousTime=now;
+  progress+=(target-progress)*(1-Math.exp(-dt/115));
+  const x=Math.sin(progress*Math.PI*1.1)*Math.min(innerWidth*.045,34);
+  const y=-18*progress;
+  const scale=1+Math.sin(progress*Math.PI)*.045;
+  rig.style.transform=`translate3d(${x}px,${y}px,0) scale(${scale}) rotate(${progress*1.4}deg)`;
+  if(Math.abs(target-progress)>.0001) scrollFrame=requestAnimationFrame(updateScroll);
+  else previousTime=0;
+}
+function scheduleScroll() {
+  if(!scrollFrame) scrollFrame=requestAnimationFrame(updateScroll);
+}
+addEventListener('scroll',scheduleScroll,{...listenerOptions,passive:true});
+addEventListener('resize',scheduleScroll,listenerOptions);
+reducedMotion.addEventListener('change',()=>{
+  sequenceIndex=0;
+  run('idle',{autoplay:!inspection});
+  scheduleScroll();
+},listenerOptions);
+
+run('idle',{autoplay:false});
+Promise.all(Object.keys(layout).map(name=>new Promise((resolve,reject)=>{
+  const img=new Image();
+  img.onload=resolve;
+  img.onerror=()=>reject(new Error(`Failed to load ${name}`));
+  img.src=asset(name);
+}))).then(()=>{
+  if(disposed) return;
+  ready=true;
+  document.body.classList.add('ready');
+  const requested=behaviorNames.includes(params.get('behavior'))?params.get('behavior'):'idle';
+  run(reducedMotion.matches?'idle':requested,{autoplay:!inspection});
+  scheduleScroll();
+}).catch(error=>{
+  if(disposed) return;
+  document.querySelector('.load-error').hidden=false;
+  console.error(error);
+});
+
+if(import.meta.hot) import.meta.hot.dispose(()=>{
+  disposed=true;
+  playing=false;
+  listeners.abort();
+  animation?.pause();
+  cancelAnimationFrame(scrollFrame);
+});

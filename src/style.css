@@ -1,300 +1,42 @@
-:root {
-  background: #f0eee8;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-}
-
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; overflow-x: hidden; background: #f0eee8; }
-img { display: block; user-select: none; -webkit-user-drag: none; }
-
+:root { background:#f0eee8; color:#282720; font:14px/1.4 system-ui,sans-serif; font-synthesis:none; text-rendering:optimizeLegibility; }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; overflow-x:hidden; background:#f0eee8; }
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: .16;
-  z-index: 50;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E");
+  content:""; position:fixed; inset:0; pointer-events:none; opacity:.16; z-index:50;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E");
 }
-
-.experience { position: relative; height: 320svh; }
-.sticky-stage {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  overflow: hidden;
-  background: #f0eee8;
-}
-
+.experience { position:relative; height:320svh; }
+.sticky-stage { position:sticky; top:0; height:100svh; overflow:hidden; }
 .scene-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(23,23,21,.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23,23,21,.055) 1px, transparent 1px);
-  background-size: 9vw 9vw;
-  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+  position:absolute; inset:0;
+  background-image:linear-gradient(rgba(23,23,21,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(23,23,21,.055) 1px,transparent 1px);
+  background-size:9vw 9vw;
+  mask-image:linear-gradient(to bottom,transparent,#000 18%,#000 82%,transparent);
 }
-
 .cat-scroll-rig {
-  --cat-w: min(66vw, 400px);
-  position: absolute;
-  width: var(--cat-w);
-  aspect-ratio: 288 / 335;
-  left: 50%;
-  top: 50%;
-  translate: -50% -48%;
-  transform-origin: 50% 60%;
-  will-change: transform;
-  z-index: 5;
+  position:absolute; width:min(98vw,760px,106svh); aspect-ratio:272/250;
+  left:50%; top:50%; translate:-50% -50%; transform-origin:50% 65%; will-change:transform;
 }
-
-.cat-idle-rig {
-  position: absolute;
-  inset: 0;
-  transform-origin: 50% 72%;
-  will-change: transform;
-  opacity: 0;
-  transition: opacity .35s ease;
+.cat-art { display:block; width:100%; height:100%; overflow:visible; opacity:0; transition:opacity .4s ease; }
+.ready .cat-art { opacity:1; }
+.cat-layer { pointer-events:none; user-select:none; }
+.load-error { position:absolute; inset:45% 24px auto; text-align:center; }
+.motion-inspector {
+  position:fixed; z-index:100; bottom:16px; left:50%; translate:-50% 0;
+  display:flex; flex-wrap:wrap; align-items:center; gap:12px; width:min(760px,calc(100vw - 24px));
+  padding:14px 16px; border:1px solid #d5d2c8; border-radius:12px; background:#faf9f4f5; box-shadow:0 8px 32px #29271d12;
 }
-.ready .cat-idle-rig { opacity: 1; }
-
-.cat-layer { position: absolute; pointer-events: none; }
-
-/* All layer measurements use the original 288 × 335 artboard.
-   body.png and head.png were cropped only on the RIGHT, so their original
-   left/top anchors stay unchanged and only their widths become narrower. */
-.tail-wrap {
-  position: absolute;
-  width: 40.9722%;            /* 118 / 288 */
-  aspect-ratio: 118 / 122;
-  left: 28.15%;               /* root lands on body bottom-center */
-  top: 59.25%;
-  z-index: 1;
-  transform-origin: 17% 84%;  /* thick rounded end = attached/root end */
-  will-change: transform;
+.motion-inspector label { display:flex; align-items:center; gap:8px; font-size:12px; }
+.motion-inspector .scrubber { flex:1; min-width:160px; }
+.motion-inspector input { width:100%; accent-color:#837344; }
+.motion-inspector button,.motion-inspector select { font:inherit; color:inherit; border:1px solid #d5d2c8; border-radius:6px; padding:6px 9px; background:white; }
+.motion-inspector button { cursor:pointer; }
+.motion-inspector output { font-size:11px; font-variant-numeric:tabular-nums; min-width:100px; }
+:focus-visible { outline:2px solid #80704b; outline-offset:3px; }
+@media(max-width:720px) { .experience { height:280svh; } .scene-grid { background-size:18vw 18vw; } }
+@media(prefers-reduced-motion:reduce) {
+  html { scroll-behavior:auto; }
+  .cat-scroll-rig { transform:none !important; }
+  .cat-art { transition:none; }
 }
-.tail {
-  width: 100%;
-  inset: 0;
-}
-
-.body {
-  width: 55.2083%;            /* 159 / 288: preserve pre-crop visual scale */
-  left: 7.5%;                 /* right-only crop: keep old left anchor */
-  top: 4.5%;
-  z-index: 3;
-  transform-origin: 50% 72%;
-}
-
-.head {
-  width: 62.1528%;            /* 179 / 288: preserve pre-crop visual scale */
-  left: 7%;                   /* right-only crop: keep old left anchor */
-  top: 3.1%;
-  z-index: 5;
-  transform-origin: 50% 42%;
-}
-
-/* feet.png still contains its original transparent alignment space.
-   Keep the full 154 × 303 layer at one scale/location, then duplicate it
-   and clip each copy in half so Anime.js can knead each foot separately. */
-.feet-clip {
-  position: absolute;
-  width: 53.4722%;            /* 154 / 288 */
-  height: 90.4478%;           /* 303 / 335 */
-  left: 20.1%;
-  top: 3.6%;
-  z-index: 4;
-  overflow: visible;
-  will-change: transform;
-  transform-origin: 50% 94%;
-}
-.feet-left { clip-path: inset(0 50% 0 0); }
-.feet-right { clip-path: inset(0 0 0 50%); }
-.feet-source {
-  width: 100%;
-  max-width: none;
-  left: 0;
-  top: 0;
-}
-
-.face-rig {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  perspective: 520px;
-  transform-style: preserve-3d;
-}
-.earholes {
-  width: 46.53%;
-  left: 24.8%;
-  top: 10.8%;
-  will-change: transform;
-}
-.eye-window {
-  position: absolute;
-  width: 28%;
-  height: 9%;
-  left: 34.2%;
-  top: 20.2%;
-  overflow: hidden;
-  z-index: 4;
-}
-.eyes {
-  width: 69.44%;
-  left: 15%;
-  top: 10%;
-  will-change: transform;
-}
-.brows {
-  width: 25.7%;
-  left: 35.5%;
-  top: 17%;
-  will-change: transform;
-  transform-origin: 50% 50%;
-  transform-style: preserve-3d;
-  backface-visibility: visible;
-  z-index: 5;
-}
-.whiskers {
-  width: 65.28%;
-  left: 15.3%;
-  top: 29.2%;
-  will-change: transform;
-  z-index: 6;
-}
-.mouth {
-  width: 17.02%;
-  left: 39.4%;
-  top: 27.8%;
-  will-change: transform;
-  transform-origin: 50% 50%;
-  transform-style: preserve-3d;
-  backface-visibility: visible;
-  z-index: 7;
-}
-
-@media (max-width: 720px) {
-  .experience { height: 280svh; }
-  .cat-scroll-rig { --cat-w: min(84vw, 300px); top: 52%; }
-  .scene-grid { background-size: 18vw 18vw; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .cat-scroll-rig { transform: none !important; }
-  .cat-idle-rig { opacity: 1; }
-}
-
-/* CAT_LAYER_EDITOR_STYLES_START */
-.layout-editing [data-edit-layer] {
-  pointer-events: auto !important;
-  cursor: grab;
-  touch-action: none;
-}
-
-.layout-editing [data-edit-layer]:active {
-  cursor: grabbing;
-}
-
-.layout-editing .is-edit-selected {
-  outline: 1px dashed rgba(30, 30, 30, .9);
-  outline-offset: 4px;
-}
-
-.layer-editor {
-  position: fixed;
-  z-index: 1000;
-  left: 14px;
-  bottom: 14px;
-  width: min(330px, calc(100vw - 28px));
-  padding: 12px;
-  border: 1px solid rgba(0, 0, 0, .18);
-  border-radius: 12px;
-  background: rgba(250, 249, 245, .94);
-  box-shadow: 0 14px 38px rgba(0, 0, 0, .12);
-  backdrop-filter: blur(12px);
-  color: #171715;
-  font: 12px/1.35 system-ui, sans-serif;
-}
-
-.layer-editor__row,
-.layer-editor__actions,
-.layer-editor__nudge,
-.layer-editor label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.layer-editor__row {
-  justify-content: space-between;
-  margin-bottom: 9px;
-}
-
-.layer-editor label {
-  margin: 7px 0;
-}
-
-.layer-editor label > span {
-  width: 42px;
-  flex: 0 0 auto;
-}
-
-.layer-editor select,
-.layer-editor input[type="range"] {
-  flex: 1;
-  min-width: 0;
-}
-
-.layer-editor button,
-.layer-editor select {
-  border: 1px solid rgba(0, 0, 0, .18);
-  border-radius: 7px;
-  background: #fff;
-  color: inherit;
-  padding: 6px 8px;
-  font: inherit;
-}
-
-.layer-editor button {
-  cursor: pointer;
-}
-
-.layer-editor__nudge {
-  justify-content: center;
-  margin: 8px 0;
-}
-
-.layer-editor__nudge button {
-  width: 38px;
-  height: 34px;
-  padding: 0;
-  font-size: 16px;
-}
-
-.layer-editor__actions {
-  margin-top: 8px;
-}
-
-.layer-editor__actions button {
-  flex: 1;
-}
-
-.layer-editor small {
-  display: block;
-  margin-top: 8px;
-  opacity: .62;
-}
-
-@media (max-width: 720px) {
-  .layer-editor {
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: auto;
-  }
-}
-/* CAT_LAYER_EDITOR_STYLES_END */
